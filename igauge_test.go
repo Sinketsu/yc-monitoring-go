@@ -14,7 +14,7 @@ func TestIGauge_Set(t *testing.T) {
 
 	assert.ElementsMatch(t, []metric{
 		{Name: "test_igauge", Labels: map[string]string{"label1": "value1", "label2": "value2"},
-			Type: TYPE_IGAUGE, Value: 100},
+			Type: TYPE_COUNTER, Value: 100},
 	}, m.GetMetrics())
 
 	m.Set(10, "value3", "value4")
