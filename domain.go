@@ -1,7 +1,10 @@
 package ycmonitoringgo
 
 const (
-	TYPE_DGAUGE string = "DGAUGE"
+	TYPE_DGAUGE  string = "DGAUGE"
+	TYPE_IGAUGE  string = "IGAUGE"
+	TYPE_COUNTER string = "COUNTER"
+	TYPE_RATE    string = "RATE"
 )
 
 type Request struct {
