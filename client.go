@@ -40,7 +40,7 @@ func NewClient(folder string, token string, options ...Option) *Client {
 	}
 }
 
-func (c *Client) Run(ctx context.Context, interval time.Duration) {
+func (c *Client) Run(ctx context.Context, registry *Registry, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -49,7 +49,7 @@ func (c *Client) Run(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			err := c.send(ctx)
+			err := c.send(ctx, registry)
 			if err != nil && c.logger != nil {
 				c.logger.Error("fail send metrics", err)
 			}
@@ -57,11 +57,12 @@ func (c *Client) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
-func (c *Client) send(ctx context.Context) error {
+func (c *Client) send(ctx context.Context, registry *Registry) error {
 	r := Request{}
-	// for _, m := range globalMetrics {
-	// 	r.Metrics = append(r.Metrics, m.Get()...)
-	// }
+
+	registry.Range(func(i int, m Metric) {
+		r.Metrics = append(r.Metrics, m.GetMetrics()...)
+	})
 
 	body, err := json.Marshal(r)
 	if err != nil {

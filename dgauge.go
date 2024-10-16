@@ -1,97 +1,122 @@
 package ycmonitoringgo
 
 import (
-	"slices"
+	"strings"
 	"sync"
+
+	"go.uber.org/atomic"
 )
 
 type DGauge struct {
 	name   string
 	labels []string
 
-	metrics []dGaugeMetric
+	metrics map[string]*dgaugeMetric
 	mu      sync.RWMutex
 }
 
-type dGaugeMetric struct {
-	Value       float64
+type dgaugeMetric struct {
+	Value       atomic.Float64
 	LabelValues []string
 }
 
-func NewDGauge(name string, labels ...string) *DGauge {
+func NewDGauge(name string, registry *Registry, labels ...string) *DGauge {
 	dg := &DGauge{
 		name:   name,
 		labels: labels,
+
+		metrics: make(map[string]*dgaugeMetric),
 	}
 
-	defaultRegistry.Add(dg)
-
+	registry.Add(dg)
 	return dg
 }
 
-func (g *DGauge) Set(value float64, values ...string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+func (s *DGauge) Set(value float64, values ...string) {
+	if len(values) != len(s.labels) {
+		return
+	}
+	tagKey := strings.Join(values, ",")
 
-	if len(values) != len(g.labels) {
+	s.mu.RLock()
+	metric, ok := s.metrics[tagKey]
+	s.mu.RUnlock()
+
+	if ok {
+		metric.Value.Store(value)
 		return
 	}
 
-	idx := -1
-	for i, m := range g.metrics {
-		if slices.Equal(values, m.LabelValues) {
-			idx = i
-			break
-		}
-	}
-
-	if idx != -1 {
-		g.metrics[idx].Value = value
-	} else {
-		g.metrics = append(g.metrics, dGaugeMetric{
-			Value:       value,
+	s.mu.Lock()
+	metric, ok = s.metrics[tagKey]
+	if !ok {
+		metric = &dgaugeMetric{
 			LabelValues: values,
-		})
-	}
-}
-
-func (g *DGauge) Reset(values ...string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	idx := -1
-	for i, m := range g.metrics {
-		if slices.Equal(values, m.LabelValues) {
-			idx = i
-			break
 		}
+		s.metrics[tagKey] = metric
 	}
 
-	if idx != -1 {
-		g.metrics = slices.Delete(g.metrics, idx, idx+1)
+	metric.Value.Store(value)
+	s.mu.Unlock()
+}
+
+func (s *DGauge) Add(delta float64, values ...string) {
+	if len(values) != len(s.labels) {
+		return
 	}
+	tagKey := strings.Join(values, ",")
+
+	s.mu.RLock()
+	metric, ok := s.metrics[tagKey]
+	s.mu.RUnlock()
+
+	if ok {
+		metric.Value.Add(delta)
+		return
+	}
+
+	s.mu.Lock()
+	metric, ok = s.metrics[tagKey]
+	if !ok {
+		metric = &dgaugeMetric{
+			LabelValues: values,
+		}
+		s.metrics[tagKey] = metric
+	}
+
+	metric.Value.Add(delta)
+	s.mu.Unlock()
 }
 
-func (g *DGauge) Name() string {
-	return g.name
+func (s *DGauge) Reset(values ...string) {
+	tagKey := strings.Join(values, ",")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.metrics, tagKey)
 }
 
-func (g *DGauge) GetMetrics() []metric {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
+func (s *DGauge) Name() string {
+	return s.name
+}
 
-	result := make([]metric, 0, len(g.metrics))
-	for _, m := range g.metrics {
-		labels := make(map[string]string, len(g.labels))
-		for i, name := range g.labels {
+func (s *DGauge) GetMetrics() []metric {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]metric, 0, len(s.metrics))
+	for _, m := range s.metrics {
+		labels := make(map[string]string, len(s.labels))
+		for i, name := range s.labels {
 			labels[name] = m.LabelValues[i]
 		}
 
 		result = append(result, metric{
-			Name:   g.name,
+			Name:   s.name,
 			Labels: labels,
 			Type:   TYPE_DGAUGE,
-			Value:  m.Value,
+			Value:  m.Value.Load(),
 		})
 	}
 
