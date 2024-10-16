@@ -1,123 +1,98 @@
 package ycmonitoringgo
 
 import (
-	"slices"
+	"strings"
 	"sync"
+
+	"go.uber.org/atomic"
 )
 
 type Counter struct {
 	name   string
 	labels []string
 
-	metrics []counterMetric
+	metrics map[string]*counterMetric
 	mu      sync.RWMutex
 }
 
 type counterMetric struct {
-	Value       int64
+	Value       atomic.Int64
 	LabelValues []string
 }
 
-func NewCounter(name string, labels ...string) *Counter {
+func NewCounter(name string, registry *Registry, labels ...string) *Counter {
 	c := &Counter{
 		name:   name,
 		labels: labels,
+
+		metrics: make(map[string]*counterMetric),
 	}
 
-	defaultRegistry.Add(c)
-
+	registry.Add(c)
 	return c
 }
 
-func (g *Counter) Inc(values ...string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+func (s *Counter) Inc(values ...string) {
+	s.Add(1, values...)
+}
 
-	if len(values) != len(g.labels) {
+func (s *Counter) Add(delta int64, values ...string) {
+	if len(values) != len(s.labels) {
+		return
+	}
+	tagKey := strings.Join(values, ",")
+
+	s.mu.RLock()
+	metric, ok := s.metrics[tagKey]
+	s.mu.RUnlock()
+
+	if ok {
+		metric.Value.Add(delta)
 		return
 	}
 
-	idx := -1
-	for i, m := range g.metrics {
-		if slices.Equal(values, m.LabelValues) {
-			idx = i
-			break
-		}
-	}
-
-	if idx != -1 {
-		g.metrics[idx].Value += 1
-	} else {
-		g.metrics = append(g.metrics, counterMetric{
-			Value:       1,
+	s.mu.Lock()
+	metric, ok = s.metrics[tagKey]
+	if !ok {
+		metric = &counterMetric{
 			LabelValues: values,
-		})
-	}
-}
-
-func (g *Counter) Add(value int64, values ...string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if len(values) != len(g.labels) {
-		return
-	}
-
-	idx := -1
-	for i, m := range g.metrics {
-		if slices.Equal(values, m.LabelValues) {
-			idx = i
-			break
 		}
+		s.metrics[tagKey] = metric
 	}
 
-	if idx != -1 {
-		g.metrics[idx].Value += value
-	} else {
-		g.metrics = append(g.metrics, counterMetric{
-			Value:       value,
-			LabelValues: values,
-		})
-	}
+	metric.Value.Add(delta)
+	s.mu.Unlock()
 }
 
-func (g *Counter) Reset(values ...string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+func (s *Counter) Reset(values ...string) {
+	tagKey := strings.Join(values, ",")
 
-	idx := -1
-	for i, m := range g.metrics {
-		if slices.Equal(values, m.LabelValues) {
-			idx = i
-			break
-		}
-	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if idx != -1 {
-		g.metrics = slices.Delete(g.metrics, idx, idx+1)
-	}
+	delete(s.metrics, tagKey)
 }
 
-func (g *Counter) Name() string {
-	return g.name
+func (s *Counter) Name() string {
+	return s.name
 }
 
-func (g *Counter) GetMetrics() []metric {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
+func (s *Counter) GetMetrics() []metric {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	result := make([]metric, 0, len(g.metrics))
-	for _, m := range g.metrics {
-		labels := make(map[string]string, len(g.labels))
-		for i, name := range g.labels {
+	result := make([]metric, 0, len(s.metrics))
+	for _, m := range s.metrics {
+		labels := make(map[string]string, len(s.labels))
+		for i, name := range s.labels {
 			labels[name] = m.LabelValues[i]
 		}
 
 		result = append(result, metric{
-			Name:   g.name,
+			Name:   s.name,
 			Labels: labels,
 			Type:   TYPE_COUNTER,
-			Value:  float64(m.Value),
+			Value:  m.Value.Load(),
 		})
 	}
 

@@ -20,5 +20,5 @@ type metric struct {
 	Name   string            `json:"name"`
 	Labels map[string]string `json:"labels"`
 	Type   string            `json:"type"`
-	Value  float64           `json:"value"`
+	Value  any               `json:"value"`
 }

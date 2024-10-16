@@ -1,97 +1,98 @@
 package ycmonitoringgo
 
 import (
-	"slices"
+	"strings"
 	"sync"
+
+	"go.uber.org/atomic"
 )
 
 type Rate struct {
 	name   string
 	labels []string
 
-	metrics []rateMetric
+	metrics map[string]*rateMetric
 	mu      sync.RWMutex
 }
 
 type rateMetric struct {
-	Value       float64
+	Value       atomic.Float64
 	LabelValues []string
 }
 
-func NewRate(name string, labels ...string) *Rate {
+func NewRate(name string, registry *Registry, labels ...string) *Rate {
 	r := &Rate{
 		name:   name,
 		labels: labels,
+
+		metrics: make(map[string]*rateMetric),
 	}
 
-	defaultRegistry.Add(r)
-
+	registry.Add(r)
 	return r
 }
 
-func (g *Rate) Set(value float64, values ...string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+func (s *Rate) Inc(values ...string) {
+	s.Add(1, values...)
+}
 
-	if len(values) != len(g.labels) {
+func (s *Rate) Add(delta float64, values ...string) {
+	if len(values) != len(s.labels) {
+		return
+	}
+	tagKey := strings.Join(values, ",")
+
+	s.mu.RLock()
+	metric, ok := s.metrics[tagKey]
+	s.mu.RUnlock()
+
+	if ok {
+		metric.Value.Add(delta)
 		return
 	}
 
-	idx := -1
-	for i, m := range g.metrics {
-		if slices.Equal(values, m.LabelValues) {
-			idx = i
-			break
-		}
-	}
-
-	if idx != -1 {
-		g.metrics[idx].Value = value
-	} else {
-		g.metrics = append(g.metrics, rateMetric{
-			Value:       value,
+	s.mu.Lock()
+	metric, ok = s.metrics[tagKey]
+	if !ok {
+		metric = &rateMetric{
 			LabelValues: values,
-		})
-	}
-}
-
-func (g *Rate) Reset(values ...string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	idx := -1
-	for i, m := range g.metrics {
-		if slices.Equal(values, m.LabelValues) {
-			idx = i
-			break
 		}
+		s.metrics[tagKey] = metric
 	}
 
-	if idx != -1 {
-		g.metrics = slices.Delete(g.metrics, idx, idx+1)
-	}
+	metric.Value.Add(delta)
+	s.mu.Unlock()
 }
 
-func (g *Rate) Name() string {
-	return g.name
+func (s *Rate) Reset(values ...string) {
+	tagKey := strings.Join(values, ",")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.metrics, tagKey)
 }
 
-func (g *Rate) GetMetrics() []metric {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
+func (s *Rate) Name() string {
+	return s.name
+}
 
-	result := make([]metric, 0, len(g.metrics))
-	for _, m := range g.metrics {
-		labels := make(map[string]string, len(g.labels))
-		for i, name := range g.labels {
+func (s *Rate) GetMetrics() []metric {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]metric, 0, len(s.metrics))
+	for _, m := range s.metrics {
+		labels := make(map[string]string, len(s.labels))
+		for i, name := range s.labels {
 			labels[name] = m.LabelValues[i]
 		}
 
 		result = append(result, metric{
-			Name:   g.name,
+			Name:   s.name,
 			Labels: labels,
 			Type:   TYPE_RATE,
-			Value:  m.Value,
+			Value:  m.Value.Load(),
 		})
 	}
 
