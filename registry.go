@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	DefaultRegistry = &Registry{}
+	DefaultRegistry = NewRegistry()
 )
 
 type Registry struct {
