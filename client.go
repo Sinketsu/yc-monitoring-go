@@ -69,7 +69,7 @@ func (c *Client) send(ctx context.Context, registry *Registry) error {
 		return fmt.Errorf("fail marshal json: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url+"/v2/data/write", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("fail to create new http request: %w", err)
 	}
