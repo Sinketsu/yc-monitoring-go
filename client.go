@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -85,7 +86,11 @@ func (c *Client) send(ctx context.Context, registry *Registry) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("got non 200 code: %d", resp.StatusCode)
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("got non 200 code: %d", resp.StatusCode)
+		}
+		return fmt.Errorf("got non 200 code: %d. body: %s", resp.StatusCode, string(data))
 	}
 
 	return nil
