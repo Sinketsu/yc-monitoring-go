@@ -51,7 +51,7 @@ func (c *Client) Run(ctx context.Context, registry *Registry, interval time.Dura
 		case <-ticker.C:
 			err := c.send(ctx, registry)
 			if err != nil && c.logger != nil {
-				c.logger.Error("fail send metrics", err)
+				c.logger.Error(fmt.Sprintf("fail send metrics: %v", err))
 			}
 		}
 	}
