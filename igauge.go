@@ -97,6 +97,13 @@ func (s *IGauge) Reset(values ...string) {
 	delete(s.metrics, tagKey)
 }
 
+func (s *IGauge) ResetAll() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	clear(s.metrics)
+}
+
 func (s *IGauge) Name() string {
 	return s.name
 }
