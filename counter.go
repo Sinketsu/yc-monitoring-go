@@ -73,6 +73,13 @@ func (s *Counter) Reset(values ...string) {
 	delete(s.metrics, tagKey)
 }
 
+func (s *Counter) ResetAll() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	clear(s.metrics)
+}
+
 func (s *Counter) Name() string {
 	return s.name
 }
